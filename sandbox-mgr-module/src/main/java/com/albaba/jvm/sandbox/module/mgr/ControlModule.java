@@ -30,6 +30,16 @@ public class ControlModule implements Module {
     @Resource
     private ModuleManager moduleManager;
 
+    private ClassLoader getSandboxClassLoader(final Class<?> classOfAgentLauncher)
+            throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
+        final ClassLoader sandboxClassLoader = (ClassLoader) MethodUtils.invokeStaticMethod(
+                classOfAgentLauncher,
+                "getClassLoader",
+                configInfo.getNamespace()
+        );
+        return sandboxClassLoader;
+    }
+
     // 清理命名空间所对应的SandboxClassLoader
     private ClassLoader cleanSandboxClassLoader(final Class<?> classOfAgentLauncher)
             throws NoSuchMethodException, IllegalAccessException, InvocationTargetException {
@@ -100,10 +110,10 @@ public class ControlModule implements Module {
             return;
         }
 
-        final Class<?> classOfJettyCoreServer = sandboxClassLoader
-                .loadClass("com.alibaba.jvm.sandbox.core.server.jetty.JettyCoreServer");
-        final Object objectOfJettyCoreServer = classOfJettyCoreServer.getMethod("getInstance").invoke(null);
-        final Method methodOfDestroy = classOfJettyCoreServer.getMethod("destroy");
+        final Class<?> classOfCoreServer = sandboxClassLoader
+                .loadClass("com.alibaba.jvm.sandbox.core.server.ProxyCoreServer");
+        final Object objectOfJettyCoreServer = classOfCoreServer.getMethod("getInstance").invoke(null);
+        final Method methodOfDestroy = classOfCoreServer.getMethod("destroy");
         methodOfDestroy.invoke(objectOfJettyCoreServer, null);
         logger.info("shutdown http-server success, for shutdown jvm-sandbox.");
     }
@@ -116,8 +126,6 @@ public class ControlModule implements Module {
         final Class<?> classOfAgentLauncher = getClass().getClassLoader()
                 .loadClass("com.alibaba.jvm.sandbox.agent.AgentLauncher");
 
-        // 清理引用
-        final ClassLoader sandboxClassLoader = cleanSandboxClassLoader(classOfAgentLauncher);
         cleanSpy();
 
         // 卸载模块
@@ -128,9 +136,14 @@ public class ControlModule implements Module {
             @Override
             public void run() {
                 try {
-                    unloadSelf();
-                    shutdownServer(sandboxClassLoader);
+
+                    shutdownServer(getSandboxClassLoader(classOfAgentLauncher));
                     logger.info("shutdown jvm-sandbox finished.");
+
+                    // 清理引用
+                    unloadSelf();
+                    cleanSandboxClassLoader(classOfAgentLauncher);
+
                 } catch (Throwable cause) {
                     logger.warn("shutdown jvm-sandbox failed.", cause);
                 }

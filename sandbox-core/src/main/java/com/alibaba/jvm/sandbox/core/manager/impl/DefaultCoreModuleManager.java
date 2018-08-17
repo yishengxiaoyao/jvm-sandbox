@@ -1,14 +1,13 @@
 package com.alibaba.jvm.sandbox.core.manager.impl;
 
-import com.alibaba.jvm.sandbox.api.Information;
+import com.alibaba.jvm.sandbox.api.*;
 import com.alibaba.jvm.sandbox.api.Module;
-import com.alibaba.jvm.sandbox.api.ModuleException;
-import com.alibaba.jvm.sandbox.api.ModuleLifecycle;
 import com.alibaba.jvm.sandbox.api.resource.*;
 import com.alibaba.jvm.sandbox.core.CoreConfigure;
 import com.alibaba.jvm.sandbox.core.classloader.ModuleClassLoader;
 import com.alibaba.jvm.sandbox.core.domain.CoreModule;
 import com.alibaba.jvm.sandbox.core.enhance.weaver.EventListenerHandlers;
+import com.alibaba.jvm.sandbox.core.manager.CoreLoadedClassDataSource;
 import com.alibaba.jvm.sandbox.core.manager.CoreModuleManager;
 import com.alibaba.jvm.sandbox.core.manager.ModuleLifeCycleEventBus;
 import com.alibaba.jvm.sandbox.core.manager.ProviderManager;
@@ -31,6 +30,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static com.alibaba.jvm.sandbox.api.ModuleException.ErrorCode.*;
+import static com.alibaba.jvm.sandbox.core.manager.ModuleLifeCycleEventBus.Event.LOAD_COMPLETED;
 import static org.apache.commons.io.FileUtils.listFiles;
 
 /**
@@ -41,7 +41,7 @@ public class DefaultCoreModuleManager implements CoreModuleManager {
 
     private final Logger logger = LoggerFactory.getLogger(getClass());
     private final Instrumentation inst;
-    private final LoadedClassDataSource classDataSource;
+    private final CoreLoadedClassDataSource classDataSource;
     private final CoreConfigure cfg;
     private final ClassLoader sandboxClassLoader;
     private final ModuleLifeCycleEventBus moduleLifeCycleEventBus;
@@ -64,7 +64,7 @@ public class DefaultCoreModuleManager implements CoreModuleManager {
      * @param providerManager         服务提供者管理器
      */
     public DefaultCoreModuleManager(final Instrumentation inst,
-                                    final LoadedClassDataSource classDataSource,
+                                    final CoreLoadedClassDataSource classDataSource,
                                     final CoreConfigure cfg,
                                     final ClassLoader sandboxClassLoader,
                                     final ModuleLifeCycleEventBus moduleLifeCycleEventBus,
@@ -119,15 +119,6 @@ public class DefaultCoreModuleManager implements CoreModuleManager {
                     break;
                 }
 
-                case LOAD_COMPLETED: {
-                    try {
-                        moduleLifecycle.loadCompleted();
-                    } catch (Throwable throwable) {
-                        logger.warn("module[id={}] occur error when load completed.", uniqueId, throwable);
-                    }
-                    break;
-                }
-
                 case UNLOAD: {
                     try {
                         moduleLifecycle.onUnload();
@@ -156,6 +147,17 @@ public class DefaultCoreModuleManager implements CoreModuleManager {
                 }
 
             }// switch
+        }
+
+        if (e == LOAD_COMPLETED
+                && coreModule.getModule() instanceof LoadCompleted) {
+            final String uniqueId = coreModule.getUniqueId();
+            final LoadCompleted loadCompleted = (LoadCompleted) coreModule.getModule();
+            try {
+                loadCompleted.loadCompleted();
+            } catch (Throwable throwable) {
+                logger.warn("module[id={}] occur error when load completed.", uniqueId, throwable);
+            }
         }
 
         // fire the bus
@@ -272,7 +274,7 @@ public class DefaultCoreModuleManager implements CoreModuleManager {
         loadedModuleBOMap.put(uniqueId, coreModule);
 
         // 通知声明周期，模块加载完成
-        fireModuleLifecycle(coreModule, ModuleLifeCycleEventBus.Event.LOAD_COMPLETED);
+        fireModuleLifecycle(coreModule, LOAD_COMPLETED);
 
         logger.info("loaded module[id={};class={};] success, loader={}", uniqueId, module.getClass(), moduleClassLoader);
 
@@ -558,6 +560,7 @@ public class DefaultCoreModuleManager implements CoreModuleManager {
      */
     private void softFlush() throws ModuleException {
 
+        final File systemModuleLibDir = new File(cfg.getSystemModuleLibPath());
         final File[] userModuleLibDirArray = cfg.getUserModuleLibFilesWithCache();
         for (final File userModuleLibDir : userModuleLibDirArray) {
 
@@ -587,10 +590,16 @@ public class DefaultCoreModuleManager implements CoreModuleManager {
                 // 2. 找出所有待卸载的已加载用户模块
                 for (final CoreModule coreModule : loadedModuleBOMap.values()) {
                     final ModuleClassLoader moduleClassLoader = coreModule.getLoader();
-                    // 如果不是用户模块目录，忽略
-                    if (!isOptimisticDirectoryContainsFile(userModuleLibDir, coreModule.getJarFile())) {
+
+                    // 如果是系统模块目录则跳过
+                    if(isOptimisticDirectoryContainsFile(systemModuleLibDir, coreModule.getJarFile())) {
                         continue;
                     }
+//
+//                    // 如果不是用户模块目录，忽略
+//                    if (!isOptimisticDirectoryContainsFile(userModuleLibDir, coreModule.getJarFile())) {
+//                        continue;
+//                    }
                     // 如果CRC32已经在这次待加载的集合中，则说明这个文件没有变动，忽略
                     if (checksumCRC32s.contains(moduleClassLoader.getChecksumCRC32())) {
                         continue;

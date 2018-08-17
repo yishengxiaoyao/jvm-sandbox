@@ -3,9 +3,6 @@
 # sandbox's target dir
 SANDBOX_TARGET_DIR=../target/sandbox
 
-# sandbox's version
-SANDBOX_VERSION=$(cat ..//sandbox-core/src/main/resources/com/alibaba/jvm/sandbox/version)
-
 
 # exit shell with err_code
 # $1 : err_code
@@ -36,11 +33,15 @@ cp ../sandbox-core/target/sandbox-core-*-jar-with-dependencies.jar ${SANDBOX_TAR
     && cp sandbox.properties ${SANDBOX_TARGET_DIR}/cfg/sandbox.properties \
     && cp sandbox.sh ${SANDBOX_TARGET_DIR}/bin/sandbox.sh \
     && cp install-local.sh ${SANDBOX_TARGET_DIR}/install-local.sh
+
+# sandbox's version
+SANDBOX_VERSION=$(cat ..//sandbox-core/target/classes/com/alibaba/jvm/sandbox/version)
 echo "${SANDBOX_VERSION}" > ${SANDBOX_TARGET_DIR}/cfg/version
 
-# for test
-## cp ../sandbox-debug-module/target/sandbox-debug-module-*-jar-with-dependencies.jar\
-##     ${SANDBOX_TARGET_DIR}/module/sandbox-debug-module.jar
+# for example
+mkdir -p ${SANDBOX_TARGET_DIR}/example\
+    && cp ../sandbox-debug-module/target/sandbox-debug-module-*-jar-with-dependencies.jar\
+            ${SANDBOX_TARGET_DIR}/example/sandbox-debug-module.jar
 
 # for mgr
 cp ../sandbox-mgr-module/target/sandbox-mgr-module-*-jar-with-dependencies.jar ${SANDBOX_TARGET_DIR}/module/sandbox-mgr-module.jar \
